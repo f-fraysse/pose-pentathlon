@@ -1,0 +1,5 @@
+rtmlib
+# DO NOT add `onnxruntime` (CPU) — it will shadow onnxruntime-gpu at import time.
+onnxruntime-gpu==1.20.1
+opencv-python
+numpy

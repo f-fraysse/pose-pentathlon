@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+.env
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# rtmlib downloads ONNX models on first run
+models/
+*.onnx
+
+# Misc
+.DS_Store
+Thumbs.db
