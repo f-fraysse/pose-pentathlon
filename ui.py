@@ -53,6 +53,54 @@ def panel(frame, rect, alpha=None, color=None):
     cv2.addWeighted(overlay, alpha, sub, 1.0 - alpha, 0, dst=sub)
 
 
+def left_power_bar_rect(frame):
+    """Standard placement for an activity's left-side vertical power bar."""
+    fh, fw = frame.shape[:2]
+    return (int(fw * 0.04), int(fh * 0.14), int(fw * 0.06), int(fh * 0.72))
+
+
+def draw_power_bar(frame, rect, frac, peak_frac=None):
+    """Vertical fill bar with a red->yellow->green gradient.
+    Fills from the bottom up to `frac` (0..1). Optional `peak_frac` draws a
+    horizontal marker line at the persistent high-water mark."""
+    x, y, w, h = rect
+    fh, fw = frame.shape[:2]
+    x0, y0 = max(0, x), max(0, y)
+    x1, y1 = min(fw, x + w), min(fh, y + h)
+    if x1 <= x0 or y1 <= y0:
+        return
+    bar_h = y1 - y0
+    bar_w = x1 - x0
+
+    # Dark background
+    frame[y0:y1, x0:x1] = (40, 40, 40)
+
+    # Fill region with gradient (red at bottom, yellow at midpoint, green at top)
+    frac = max(0.0, min(1.0, float(frac)))
+    fill_h = int(round(bar_h * frac))
+    if fill_h > 0:
+        # v=0 at bottom row of fill, v=1 at top row of bar
+        v = np.linspace(1.0 - fill_h / bar_h, 1.0, fill_h, dtype=np.float32)[::-1]
+        g_ch = np.clip(2.0 * v * 255.0, 0, 255).astype(np.uint8)
+        r_ch = np.clip(2.0 * (1.0 - v) * 255.0, 0, 255).astype(np.uint8)
+        b_ch = np.zeros(fill_h, dtype=np.uint8)
+        col = np.stack([b_ch, g_ch, r_ch], axis=-1)         # (fill_h, 3)
+        fill_y0 = y1 - fill_h
+        frame[fill_y0:y1, x0:x1] = col[:, None, :]          # broadcast over width
+
+    # Peak marker
+    if peak_frac is not None:
+        pf = max(0.0, min(1.0, float(peak_frac)))
+        if pf > 0.0:
+            peak_y = y1 - int(round(bar_h * pf))
+            peak_y = max(y0, min(y1 - 1, peak_y))
+            cv2.line(frame, (x0 - 6, peak_y), (x1 + 5, peak_y),
+                     cfg.COL_PRIMARY, 3, cv2.LINE_AA)
+
+    # Outline
+    cv2.rectangle(frame, (x0, y0), (x1 - 1, y1 - 1), cfg.COL_OUTLINE, 2, cv2.LINE_AA)
+
+
 def progress_bar(frame, rect, frac, color=None, bg=None):
     """Background bar + foreground fill proportional to frac in [0, 1]."""
     color = cfg.COL_HUD_BAR if color is None else color
@@ -149,17 +197,26 @@ def big_digit(frame, label):
 
 # ── Skeleton ──────────────────────────────────────────────────────────────────
 
-def draw_skeleton(frame, results, score_thresh=None):
-    """Draw COCO-17 bones + joints from a PoseDetector results dict."""
+def draw_skeleton(frame, results, highlight_joints=None, highlight_bones=None,
+                  score_thresh=None):
+    """Draw COCO-17 bones + joints. Optional highlight sets render the given
+    joints/bones in COL_ACCENT at increased size."""
+    hj = set(highlight_joints) if highlight_joints else set()
+    hb = set(highlight_bones) if highlight_bones else set()
     pts = {k: (int(r.position[0]), int(r.position[1])) for k, r in results.items()}
 
     for a, b in COCO17_BONES:
         if a in pts and b in pts:
-            cv2.line(frame, pts[a], pts[b], cfg.COL_SKELETON,
-                     cfg.SKELETON_THICKNESS, cv2.LINE_AA)
+            is_h = (a, b) in hb or (b, a) in hb
+            color = cfg.COL_ACCENT if is_h else cfg.COL_SKELETON
+            thick = cfg.SKELETON_THICKNESS + (3 if is_h else 0)
+            cv2.line(frame, pts[a], pts[b], color, thick, cv2.LINE_AA)
 
-    for p in pts.values():
-        cv2.circle(frame, p, cfg.JOINT_RADIUS, cfg.COL_JOINT, -1, cv2.LINE_AA)
+    for k, p in pts.items():
+        is_h = k in hj
+        color = cfg.COL_ACCENT if is_h else cfg.COL_JOINT
+        radius = cfg.JOINT_RADIUS + (4 if is_h else 0)
+        cv2.circle(frame, p, radius, color, -1, cv2.LINE_AA)
 
 
 def draw_fps(frame, fps):
@@ -204,8 +261,8 @@ def draw_countdown(frame, seconds_remaining):
     big_digit(frame, label)
 
 
-def draw_activity_hud(frame, event_name, time_frac, score):
-    """Top: event name + score on a thin strip. Bottom: time-left progress bar."""
+def draw_activity_hud(frame, event_name, time_frac, display):
+    """Top: event name + display string on a thin strip. Bottom: time-left progress bar."""
     fh, fw = frame.shape[:2]
     strip_h = int(fh * 0.10)
     panel(frame, (0, 0, fw, strip_h))
@@ -213,10 +270,9 @@ def draw_activity_hud(frame, event_name, time_frac, score):
     heading_scale = _scale_for(fh, cfg.UI_HEADING_FRAC)
     text_outlined(frame, event_name, (pad, int(strip_h * 0.7)),
                   heading_scale, cfg.COL_PRIMARY)
-    score_text = f"{score} pts"
-    (tw, _), _ = cv2.getTextSize(score_text, _FONT, heading_scale,
+    (tw, _), _ = cv2.getTextSize(display, _FONT, heading_scale,
                                  _thickness_for(heading_scale))
-    text_outlined(frame, score_text, (fw - tw - pad, int(strip_h * 0.7)),
+    text_outlined(frame, display, (fw - tw - pad, int(strip_h * 0.7)),
                   heading_scale, cfg.COL_TEXT)
 
     bar_h = int(fh * 0.025)

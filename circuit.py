@@ -3,6 +3,7 @@ from enum import Enum, auto
 
 import config as cfg
 import ui
+from activities import HighKneesActivity, VerticalJumpActivity
 
 
 class State(Enum):
@@ -40,7 +41,10 @@ class StubActivity:
 
     def get_result(self):
         pts = int(round(self._score))
-        return {"points": pts, "raw": self._score, "display_str": f"{pts} pts"}
+        return {"points": pts, "raw": self._score, "display_str": f"{pts}"}
+
+    def highlight(self):
+        return {}
 
 
 def athlete_title(total_points):
@@ -93,6 +97,14 @@ class Circuit:
         elif s is State.TRANSITION and t >= cfg.TRANSITION_SEC:
             self._enter(State.INSTRUCTIONS)
 
+    def draw_skeleton(self, frame, results):
+        hl = {}
+        if self.state is State.ACTIVITY:
+            hl = self.activities[self.idx].highlight() or {}
+        ui.draw_skeleton(frame, results,
+                         highlight_joints=hl.get("joints"),
+                         highlight_bones=hl.get("bones"))
+
     def draw(self, frame):
         s = self.state
         if s is State.ATTRACT:
@@ -110,7 +122,7 @@ class Circuit:
             t = self._elapsed()
             ui.draw_activity_hud(frame, act.name,
                                  time_frac=min(1.0, t / act.duration_s),
-                                 score=int(round(act.get_result()["points"])))
+                                 display=act.get_result()["display_str"])
         elif s is State.TRANSITION:
             prev_name, prev_pts = self.results[-1]
             next_name = self.activities[self.idx].name
@@ -151,12 +163,8 @@ class Circuit:
 
 
 def build_demo_circuit():
-    """Two stub activities for M2 spine-walking. Replaced at M4."""
+    """High Knees + Vertical Jump (the design-doc MVP)."""
     return Circuit([
-        StubActivity("High Knees",
-                     "Run on the spot. Lift knees as high as you can.",
-                     cfg.STUB_ACTIVITY_SEC, score_rate=80),
-        StubActivity("Vertical Jump",
-                     "Crouch and jump as high as you can. Best of 2.",
-                     cfg.STUB_ACTIVITY_SEC, score_rate=60),
+        HighKneesActivity(),
+        VerticalJumpActivity(),
     ])

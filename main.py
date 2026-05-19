@@ -42,7 +42,7 @@ def main():
 
             results = detector.detect(frame, fps_ema)
 
-            ui.draw_skeleton(frame, results)
+            circuit.draw_skeleton(frame, results)
             circuit.update(results)
             circuit.draw(frame)
             ui.draw_fps(frame, fps_ema)

@@ -31,9 +31,9 @@ Requires a CUDA-capable GPU (onnxruntime-gpu, pinned to 1.20.1).
 ## Status
 
 - **M1 — Mirror + ATTRACT** (done) — live mirrored skeleton + pulsing "STEP IN" prompt
-- **M2 — Display layer + state-machine spine** (done) — UI primitives + screen renderers (instructions / countdown / HUD / transition / results); Circuit state machine + 2 stub activities; full ATTRACT -> ... -> RESULTS flow walkable. Scores are linear stubs.
-- **M3 — Formal `Activity` ABC** — may collapse into M4 if we go straight to real events
-- **M4 — Real events: High Knees + Vertical Jump (MVP)**
+- **M2 — Display layer + state-machine spine** (done) — UI primitives + screen renderers (instructions / countdown / HUD / transition / results); Circuit state machine; full ATTRACT -> ... -> RESULTS flow walkable
+- **M3 — Formal `Activity` ABC** (skipped) — duck typing covers it; see CLAUDE.md
+- **M4 — Real events: High Knees + Vertical Jump (MVP)** (done) — hysteresis-based rep counting, hip-centre jump tracking, per-event skeleton highlight, vertical power bars with persistent peak markers. Score endpoints in `config.py` likely need lab-tuning.
 - M5 — Reaction Wall
 - M6 — Punch Power + Javelin
 - M7 — Polish: instruction images, day leaderboard, optional sound
@@ -42,8 +42,9 @@ Requires a CUDA-capable GPU (onnxruntime-gpu, pinned to 1.20.1).
 
 - `main.py` — capture/pose loop + circuit dispatch
 - `circuit.py` — `State`, `StubActivity`, `Circuit`, `build_demo_circuit`
-- `ui.py` — primitives (panel, progress_bar, big_digit, text helpers) + screen renderers
-- `config.py` — single source for tracking/UI/timing constants
+- `activities.py` — real event classes: `HighKneesActivity`, `VerticalJumpActivity`
+- `ui.py` — primitives (panel, progress_bar, power_bar, big_digit, text helpers) + screen renderers
+- `config.py` — single source for tracking / UI sizing / state-machine timings / `SCORE_MAP`
 
 ## Reused from `rtmlib_vfx`
 
