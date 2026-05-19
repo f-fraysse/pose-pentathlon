@@ -1,5 +1,7 @@
 # Pose Pentathlon
 
+**Disclaimer**: extremely vibe coded. This is for a one-off event. The foundation (webcam stream + rtmlib pose detection) was taken from a previous project - done cleanly, everything on top is quick AI code.
+
 Interactive open-day exhibit: a single webcam runs real-time 2D pose detection
 (RTMO / COCO-17). Students see their own skeleton mirrored live, then an
 operator runs them through a 5-event athletic mini-pentathlon for a composite
