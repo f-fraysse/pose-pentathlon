@@ -28,7 +28,7 @@ Requires a CUDA-capable GPU (onnxruntime-gpu, pinned to 1.20.1).
 
 ## Status
 
-- **M1 — Mirror + ATTRACT** ✅ live mirrored skeleton + pulsing "STEP IN" prompt
+- **M1 — Mirror + ATTRACT** (done) — live mirrored skeleton + pulsing "STEP IN" prompt
 - M2 — UI primitives + screen renderers
 - M3 — `Activity` base + `Circuit` state machine + 2 stub activities
 - M4 — Real events: High Knees + Vertical Jump (MVP)
