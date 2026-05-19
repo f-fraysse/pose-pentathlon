@@ -62,6 +62,24 @@ COL_JOINT       = (255, 255, 255)
 SKELETON_THICKNESS = 4
 JOINT_RADIUS = 6
 
+# ── State machine timings ────────────────────────────────────────────────────
+COUNTDOWN_SEC         = 3       # 3 -> 2 -> 1 -> GO -> ACTIVITY (each ~1s)
+TRANSITION_SEC        = 2.0     # "Event complete — Next: ..."
+STUB_ACTIVITY_SEC     = 8.0     # short for M2 demoability; tune in M4
+INSTRUCTIONS_AUTO_SEC = 4.0     # auto-advance to COUNTDOWN; SPACE skips
+
+# ── UI sizing (fractions of frame height — capture-resolution independent) ──
+UI_TITLE_FRAC     = 0.10        # ATTRACT "STEP IN", screen titles
+UI_HEADING_FRAC   = 0.06        # screen subheadings, event names
+UI_BODY_FRAC      = 0.035       # instruction text, hud labels
+UI_BIG_DIGIT_FRAC = 0.55        # countdown 3/2/1/GO
+
+# Semi-transparent panel behind text blocks
+PANEL_ALPHA    = 0.55
+COL_PANEL_BG   = (0, 0, 0)
+COL_HUD_BAR    = (60, 220, 255)
+COL_HUD_BAR_BG = (40, 40, 40)
+
 # ── Pentathlon (filled in as we build each activity) ─────────────────────────
 # Athlete titles by total points
 ATHLETE_TITLES = [

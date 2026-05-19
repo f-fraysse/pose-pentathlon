@@ -4,6 +4,7 @@ import cv2
 import config as cfg
 from capture import CaptureThread
 from pose import PoseDetector
+from circuit import build_demo_circuit
 import ui
 
 
@@ -23,6 +24,7 @@ def main():
         raise RuntimeError("Capture thread never produced a frame")
 
     detector = PoseDetector(cfg)
+    circuit = build_demo_circuit()
 
     cv2.namedWindow(cfg.WINDOW_NAME, cv2.WINDOW_NORMAL)
 
@@ -41,13 +43,14 @@ def main():
             results = detector.detect(frame, fps_ema)
 
             ui.draw_skeleton(frame, results)
-            ui.draw_attract(frame)
+            circuit.update(results)
+            circuit.draw(frame)
             ui.draw_fps(frame, fps_ema)
 
             cv2.imshow(cfg.WINDOW_NAME, frame)
 
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
+            if key != 255 and circuit.on_key(key) == "quit":
                 break
 
             now = time.perf_counter()
