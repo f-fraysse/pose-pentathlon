@@ -7,8 +7,7 @@ Interactive open-day exhibit: a single webcam runs real-time 2D pose detection
 operator runs them through a 5-event athletic mini-pentathlon for a composite
 score and athlete title.
 
-Design doc lives in the parent `rtmlib_vfx` repo at
-[docs/POSE_PENTATHLON_PLAN.md](https://github.com/f-fraysse/rtmlib_vfx/blob/main/docs/POSE_PENTATHLON_PLAN.md).
+Design doc: [docs/POSE_PENTATHLON_PLAN.md](docs/POSE_PENTATHLON_PLAN.md).
 
 ## Quickstart
 
