@@ -43,17 +43,22 @@ silently. See Gotchas.
 - **Skeleton rendering is currently flat single-colour** via
   `cfg.COL_SKELETON / COL_JOINT / SKELETON_THICKNESS / JOINT_RADIUS`. See
   Forward-looking before generalising.
+- **M2 scores are linear stubs.** `StubActivity.update` just sets
+  `_score = t_elapsed * score_rate`. Real per-event metrics
+  (rep-counting with hysteresis, jump ratio, hit counts, displacement
+  integrals) arrive at M4 — don't read the stub formula as intent.
 
 ## Architecture (one paragraph)
 
 State machine: `ATTRACT -> INSTRUCTIONS -> COUNTDOWN -> ACTIVITY -> TRANSITION`
-(loop x5) `-> RESULTS -> ATTRACT`. Every event implements a uniform `Activity`
-interface (`name`, `instruction_text`, `instruction_image`, `duration_s`,
-`reset/update/draw/is_finished/get_result`). A `Circuit` owns the activity
-list, current index, state, timing. Main loop: capture -> flip -> pose ->
-pick most-prominent person -> smooth -> dispatch to state handler -> draw ->
-`imshow`. Full detail: [docs/POSE_PENTATHLON_PLAN.md](docs/POSE_PENTATHLON_PLAN.md)
-section 5.
+(loop x N events) `-> RESULTS -> ATTRACT`. Implemented in [circuit.py](circuit.py):
+`State` enum, `StubActivity` (placeholder with the design-doc §5 method
+signatures), and `Circuit` (owns activity list, current index, current
+state, stage clock; handles key events). [main.py](main.py) is a thin
+dispatcher: per frame it captures, flips, runs pose, draws the skeleton,
+then calls `circuit.update(keypoints)` / `circuit.draw(frame)` and routes
+keys through `circuit.on_key(...)`. Full design detail:
+[docs/POSE_PENTATHLON_PLAN.md](docs/POSE_PENTATHLON_PLAN.md) section 5.
 
 ## Forward-looking notes
 
@@ -65,5 +70,11 @@ section 5.
 
 ## Status
 
-M1 complete (mirror + ATTRACT verified). Next: M2 display-layer primitives +
-screen renderers. See [README.md](README.md) for the milestone ladder.
+- M1 complete: mirror + ATTRACT verified.
+- M2 complete: UI primitives, screen renderers (instructions / countdown /
+  HUD / transition / results), `Circuit` state machine + 2 stub activities,
+  full flow walkable end-to-end. Scores are linear stubs.
+- Next: M3 (formal `Activity` ABC) — likely collapses into M4 if we
+  jump straight to real High Knees + Vertical Jump scoring.
+
+See [README.md](README.md) for the full milestone ladder.

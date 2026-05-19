@@ -18,23 +18,31 @@ conda run -n pentathlon python main.py
 
 Requires a CUDA-capable GPU (onnxruntime-gpu, pinned to 1.20.1).
 
-## Controls (M1)
+## Controls
 
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
-
-(More keys land with M2/M3.)
+| Key     | Action                                                |
+|---------|-------------------------------------------------------|
+| SPACE   | Start circuit (from ATTRACT) / advance / next student |
+| N       | Skip current activity                                 |
+| R       | Abort, reset to ATTRACT                               |
+| Q       | Quit                                                  |
 
 ## Status
 
 - **M1 — Mirror + ATTRACT** (done) — live mirrored skeleton + pulsing "STEP IN" prompt
-- M2 — UI primitives + screen renderers
-- M3 — `Activity` base + `Circuit` state machine + 2 stub activities
-- M4 — Real events: High Knees + Vertical Jump (MVP)
+- **M2 — Display layer + state-machine spine** (done) — UI primitives + screen renderers (instructions / countdown / HUD / transition / results); Circuit state machine + 2 stub activities; full ATTRACT -> ... -> RESULTS flow walkable. Scores are linear stubs.
+- **M3 — Formal `Activity` ABC** — may collapse into M4 if we go straight to real events
+- **M4 — Real events: High Knees + Vertical Jump (MVP)**
 - M5 — Reaction Wall
 - M6 — Punch Power + Javelin
 - M7 — Polish: instruction images, day leaderboard, optional sound
+
+## Project files
+
+- `main.py` — capture/pose loop + circuit dispatch
+- `circuit.py` — `State`, `StubActivity`, `Circuit`, `build_demo_circuit`
+- `ui.py` — primitives (panel, progress_bar, big_digit, text helpers) + screen renderers
+- `config.py` — single source for tracking/UI/timing constants
 
 ## Reused from `rtmlib_vfx`
 
