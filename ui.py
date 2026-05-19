@@ -94,6 +94,45 @@ def text_centered(frame, text, y, scale, color=None, thickness=None, panel_pad=N
     text_outlined(frame, text, (x, baseline_y), scale, color, thickness=thickness)
 
 
+def _wrap_text(text, scale, thickness, max_w):
+    """Greedy word-wrap. Returns a list of lines that each fit max_w pixels."""
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        (tw, _), _ = cv2.getTextSize(trial, _FONT, scale, thickness)
+        if tw > max_w and cur:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def text_block_centered(frame, text, y, scale, color=None,
+                        thickness=None, max_w_frac=0.85, line_spacing=1.3):
+    """Word-wrapped, horizontally centered, vertically centered around y."""
+    color = cfg.COL_TEXT if color is None else color
+    if thickness is None:
+        thickness = _thickness_for(scale)
+    fh, fw = frame.shape[:2]
+    max_w = int(fw * max_w_frac)
+    lines = _wrap_text(text, scale, thickness, max_w)
+    if not lines:
+        return
+    (_, th), _ = cv2.getTextSize("Ag", _FONT, scale, thickness)
+    step = int(th * line_spacing)
+    total_h = step * (len(lines) - 1) + th
+    y0 = y - total_h // 2
+    for i, line in enumerate(lines):
+        (tw, _), _ = cv2.getTextSize(line, _FONT, scale, thickness)
+        x = (fw - tw) // 2
+        text_outlined(frame, line, (x, y0 + i * step + th),
+                      scale, color, thickness=thickness)
+
+
 def big_digit(frame, label):
     """Huge centered digit/word (countdown 3/2/1/GO)."""
     fh, fw = frame.shape[:2]
@@ -151,9 +190,9 @@ def draw_instructions(frame, event_name, instruction_text, image=None):
                   scale=_scale_for(fh, cfg.UI_TITLE_FRAC),
                   color=cfg.COL_PRIMARY)
     # wrap the instruction text into up to 2 lines roughly
-    text_centered(frame, instruction_text, y=int(fh * 0.50),
-                  scale=_scale_for(fh, cfg.UI_BODY_FRAC * 1.4),
-                  color=cfg.COL_TEXT)
+    text_block_centered(frame, instruction_text, y=int(fh * 0.50),
+                        scale=_scale_for(fh, cfg.UI_BODY_FRAC * 1.4),
+                        color=cfg.COL_TEXT)
     text_centered(frame, "GET READY...", y=int(fh * 0.72),
                   scale=_scale_for(fh, cfg.UI_HEADING_FRAC),
                   color=cfg.COL_ACCENT)

@@ -69,10 +69,10 @@ STUB_ACTIVITY_SEC     = 8.0     # short for M2 demoability; tune in M4
 INSTRUCTIONS_AUTO_SEC = 4.0     # auto-advance to COUNTDOWN; SPACE skips
 
 # ── UI sizing (fractions of frame height — capture-resolution independent) ──
-UI_TITLE_FRAC     = 0.10        # ATTRACT "STEP IN", screen titles
-UI_HEADING_FRAC   = 0.06        # screen subheadings, event names
-UI_BODY_FRAC      = 0.035       # instruction text, hud labels
-UI_BIG_DIGIT_FRAC = 0.55        # countdown 3/2/1/GO
+UI_TITLE_FRAC     = 0.07        # ATTRACT "STEP IN", screen titles
+UI_HEADING_FRAC   = 0.045       # screen subheadings, event names
+UI_BODY_FRAC      = 0.026       # instruction text, hud labels
+UI_BIG_DIGIT_FRAC = 0.42        # countdown 3/2/1/GO
 
 # Semi-transparent panel behind text blocks
 PANEL_ALPHA    = 0.55
