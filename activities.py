@@ -437,17 +437,19 @@ class StickTheLandingActivity:
     TRACKED_KPTS = (7, 8, 9, 10, 11, 12, 13, 14)
 
     # Phase budgets and detection thresholds (all leg-length-normalised)
-    STANCE_HOLD_S         = 3.0
+    STANCE_HOLD_S         = 2.0
     STANCE_TIMEOUT_S      = 5.0
     HOP_TIMEOUT_S         = 4.0
     LAND_HOLD_S           = 3.0
+    LAND_SKIP_FRAMES      = 10     # ignore the first N LAND frames so the
+                                  # impact spike doesn't tank the sway score
     STANCE_ANKLE_DIFF_THR = 0.25
     HOP_AIRBORNE_THR      = 0.08
     HOP_LAND_THR          = 0.04
     TARGET_DIST_FRAC      = 0.75   # × leg_len, distance from baseline_hip_x to target
     TARGET_RADIUS         = 0.25
-    BALANCE_STD_BAD       = 0.05
-    LAND_STD_BAD          = 0.08
+    BALANCE_STD_BAD       = 0.08
+    LAND_STD_BAD          = 0.21
     ACCURACY_HOT_DIST     = 0.25
     ACCURACY_COLD_DIST    = 0.75
     STEADY_WINDOW_S       = 0.5
@@ -471,7 +473,9 @@ class StickTheLandingActivity:
         self.target_x = None
         # HOP phase
         self._airborne_seen = False
-        self.landing_hip_x = None
+        self.landing_x = None      # standing-ankle x at the landing instant
+        # LAND phase
+        self._land_frame_n = 0     # frames seen in LAND; first N are skipped
         # Live steadiness deque (for the power bar in STANCE/LAND)
         # Element shape: (t, {kpt_idx: (x, y)})
         self._steady_samples = deque()
@@ -483,6 +487,8 @@ class StickTheLandingActivity:
         self._last_lower = None
         # Decorative pulse accumulator for the hop target
         self._pulse_t = 0.0
+        # Temporary: print sub-scores once per run for lab tuning
+        self._printed = False
 
     # ── Phase machinery ──────────────────────────────────────────────────
 
@@ -524,6 +530,14 @@ class StickTheLandingActivity:
     # ── update / draw entry points ───────────────────────────────────────
 
     def update(self, keypoints, t_elapsed):
+        # Hard duration cap — if we run out the clock mid-phase, finalise
+        # whatever sub-score is still pending and transition to DONE.
+        if t_elapsed >= self.duration_s and self._phase is not _StickPhase.DONE:
+            if self._phase is _StickPhase.LAND and self._land_samples:
+                self._finalise_land()
+            self._phase = _StickPhase.DONE
+            return
+
         obs = self._lower_body_obs(keypoints)
         tracked = self._extract_tracked(keypoints)
         if obs is not None:
@@ -616,13 +630,12 @@ class StickTheLandingActivity:
 
     def _update_hop(self, obs, t_elapsed):
         if obs is not None and self.ground_y is not None and self.leg_len is not None:
-            hip_centre, _, al, ar = obs
-            standing_ankle_y = al[1] if self.standing_leg == 'L' else ar[1]
-            if standing_ankle_y < self.ground_y - self.HOP_AIRBORNE_THR * self.leg_len:
+            standing_ankle = obs[2] if self.standing_leg == 'L' else obs[3]
+            if standing_ankle[1] < self.ground_y - self.HOP_AIRBORNE_THR * self.leg_len:
                 self._airborne_seen = True
             elif (self._airborne_seen
-                  and standing_ankle_y >= self.ground_y - self.HOP_LAND_THR * self.leg_len):
-                self.landing_hip_x = hip_centre[0]
+                  and standing_ankle[1] >= self.ground_y - self.HOP_LAND_THR * self.leg_len):
+                self.landing_x = standing_ankle[0]
                 self._compute_accuracy()
                 self._enter_phase(_StickPhase.LAND, t_elapsed)
                 return
@@ -632,13 +645,13 @@ class StickTheLandingActivity:
             self._enter_phase(_StickPhase.LAND, t_elapsed)
 
     def _compute_accuracy(self):
-        if (self.landing_hip_x is None
+        if (self.landing_x is None
                 or self.target_x is None
                 or self.leg_len is None
                 or self.leg_len < 1e-3):
             self.accuracy_quality = 0.0
             return
-        dist_norm = abs(self.landing_hip_x - self.target_x) / self.leg_len
+        dist_norm = abs(self.landing_x - self.target_x) / self.leg_len
         if dist_norm <= self.ACCURACY_HOT_DIST:
             self.accuracy_quality = 1.0
         elif dist_norm >= self.ACCURACY_COLD_DIST:
@@ -648,7 +661,10 @@ class StickTheLandingActivity:
             self.accuracy_quality = 1.0 - (dist_norm - self.ACCURACY_HOT_DIST) / span
 
     def _update_land(self, tracked, t_elapsed):
-        if tracked:
+        self._land_frame_n += 1
+        # Skip the first few frames so the post-landing impact spike doesn't
+        # poison the sway average.
+        if tracked and self._land_frame_n > self.LAND_SKIP_FRAMES:
             for k, p in tracked.items():
                 self._land_samples.setdefault(k, []).append(p)
         if (t_elapsed - self._phase_started_t) >= self.LAND_HOLD_S:
@@ -763,16 +779,23 @@ class StickTheLandingActivity:
         return self._phase is _StickPhase.DONE or t_elapsed >= self.duration_s
 
     def get_result(self):
-        # Defensive: hard duration cap might fire while we're still in LAND
-        # (or earlier). Finalise any pending sub-score so we never report 0
-        # just because the phase didn't formally transition to DONE.
-        if self._phase is _StickPhase.LAND and self._land_samples:
-            self._finalise_land()
+        # No defensive finalisation here — update() owns the hard-cap path.
+        # get_result is called every frame for the HUD, so anything mutating
+        # state here would end the activity early.
         final = (0.4 * self.balance_quality
                  + 0.4 * self.land_stability_quality
                  + 0.2 * self.accuracy_quality)
         final = max(0.0, min(1.0, final))
         pts = int(round(final * 1000))
+        # Temporary tuning print (once per run, on first DONE call).
+        # TODO: remove when sub-score thresholds are tuned.
+        if self._phase is _StickPhase.DONE and not self._printed:
+            print(f"[StickTheLanding] "
+                  f"balance={self.balance_quality:.3f} (x0.4 -> {int(round(self.balance_quality * 400))}pt)  "
+                  f"land_stab={self.land_stability_quality:.3f} (x0.4 -> {int(round(self.land_stability_quality * 400))}pt)  "
+                  f"accuracy={self.accuracy_quality:.3f} (x0.2 -> {int(round(self.accuracy_quality * 200))}pt)  "
+                  f"=> {pts}pt")
+            self._printed = True
         # display_str drives the live HUD top-right cell. Show the current
         # phase so the spectator strip reads "STAND" / "HOP" / "STICK" while
         # the activity runs; once done, show the points (only seen briefly

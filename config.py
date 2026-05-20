@@ -91,10 +91,10 @@ COL_HUD_BAR_BG = (40, 40, 40)
 # shorten the circuit for testing/tweaking a single event. Keys must match
 # circuit.ACTIVITY_REGISTRY.
 CIRCUIT_ACTIVITIES = [
-    # "high_knees",
-    # "vertical_jump",
-    # "reaction_wall",
-    # "punch_power",
+    "high_knees",
+    "vertical_jump",
+    "reaction_wall",
+    "punch_power",
     "stick_landing",
 ]
 

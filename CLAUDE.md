@@ -142,14 +142,20 @@ the lab machine, watch for:
   `StickTheLandingActivity.STANCE_ANKLE_DIFF_THR = 0.25` (fraction of
   leg length). Raise to 0.30 if students cheat with a slightly lifted
   foot; lower to 0.20 if a clean stance gets rejected as "not single-leg".
-- **Stick the Landing — steadiness scoring.** `BALANCE_STD_BAD = 0.05`
-  (stance) and `LAND_STD_BAD = 0.08` (landing) set how forgiving the
+- **Stick the Landing — steadiness scoring.** `BALANCE_STD_BAD = 0.08`
+  (stance) and `LAND_STD_BAD = 0.21` (landing — much higher because
+  even a clean landing has residual sway) set how forgiving the
   steadiness scoring is. Both are leg-length-normalised thresholds on
   the *mean* per-keypoint (stdev_x + stdev_y) across `TRACKED_KPTS =
   (7, 8, 9, 10, 11, 12, 13, 14)` — elbows, wrists, hips, knees,
   equally weighted. So flailing arms tank the score along with hip
   sway. Raise if everyone scores 0; lower if everyone scores 1000. If
   you want arms to dominate / be ignored, edit `TRACKED_KPTS`.
+- **Stick the Landing — landing settle window.** `LAND_SKIP_FRAMES = 10`
+  ignores the first N LAND frames before sway sampling starts, so the
+  impact spike right after touchdown doesn't poison the average. At ~30
+  FPS that's ~0.33 s of grace. Raise if students need longer to settle;
+  lower if the LAND_HOLD_S window feels too short on stage.
 - **Stick the Landing — hop detection.** `HOP_AIRBORNE_THR = 0.08`
   (standing-ankle must rise this much × leg_len above ground to count
   as airborne) and `HOP_LAND_THR = 0.04` (must return within this ×
@@ -158,8 +164,13 @@ the lab machine, watch for:
   high enough on the lab floor.
 - **Stick the Landing — accuracy zone.** `ACCURACY_HOT_DIST = 0.25` /
   `ACCURACY_COLD_DIST = 0.75` (leg_len multiples) define the full-bonus
-  and zero-bonus distances of the landing hip-x from the target. Widen
-  the cold distance if even decent hops score 0 accuracy.
+  and zero-bonus distances of the landing-foot X from the target. Note
+  this is the **standing-ankle X** at landing, not the hip-centre —
+  matches the visual cue (target circle is drawn at the ground). Widen
+  the cold distance if even decent hops score 0 accuracy. `TARGET_RADIUS
+  = 0.25` is cosmetic (size of the drawn circle) and happens to equal
+  the hot-distance, so visually the circle = the full-bonus zone, but
+  they're separate knobs.
 - **Stick the Landing — phase budgets.** `STANCE_HOLD_S = 3.0` /
   `STANCE_TIMEOUT_S = 5.0` / `HOP_TIMEOUT_S = 4.0` / `LAND_HOLD_S = 3.0`.
   Total hard cap = `duration_s = 12.0` (matches worst-case timeout
@@ -174,6 +185,11 @@ the lab machine, watch for:
   tightly clustered to discriminate students, consider exposing a
   `position_raw` field from `PoseDetector` and computing sway from
   that instead.
+- **Stick the Landing — temporary tuning print.** `get_result()` prints
+  the three sub-scores and their weighted point contributions once per
+  run (gated by `self._printed`). Marked with `TODO: remove when
+  sub-score thresholds are tuned`. Strip the print + the flag once the
+  lab thresholds settle.
 
 ## Status
 
