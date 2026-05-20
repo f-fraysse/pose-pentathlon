@@ -34,7 +34,7 @@ Requires a CUDA-capable GPU (onnxruntime-gpu, pinned to 1.20.1).
 - **M2 — Display layer + state-machine spine** (done) — UI primitives + screen renderers (instructions / countdown / HUD / transition / results); Circuit state machine; full ATTRACT -> ... -> RESULTS flow walkable
 - **M3 — Formal `Activity` ABC** (skipped) — duck typing covers it; see CLAUDE.md
 - **M4 — Real events: High Knees + Vertical Jump (MVP)** (done) — hysteresis-based rep counting, hip-centre jump tracking, per-event skeleton highlight, vertical power bars with persistent peak markers. Score endpoints in `config.py` likely need lab-tuning.
-- M5 — Reaction Wall
+- **M5 — Reaction Wall** (done) — two simultaneous target circles in a reachable zone, wrist-keypoint hit detection with tunable `HIT_RADIUS_MULT`, hit count scored via `cfg.SCORE_MAP["reaction_wall"]`. Circuit composition is now driven by `cfg.CIRCUIT_ACTIVITIES`, so individual events can be commented out for testing.
 - M6 — Punch Power + Javelin
 - M7 — Polish: instruction images, day leaderboard, optional sound
 

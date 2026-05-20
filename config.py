@@ -34,6 +34,12 @@ POSE_DEVICE = "cuda"
 POSE_BACKEND = "onnxruntime"
 SCORE_THRESHOLD = 0.3
 
+# RTMO whole-person detection threshold. rtmlib default is 0.7, which
+# drops the entire skeleton for 1-2 frames during fast motion. Lower =
+# fewer dropouts but more false detections. Distinct from SCORE_THRESHOLD
+# above (per-keypoint).
+RTMO_SCORE_THR = 0.3
+
 # ── Webcam ────────────────────────────────────────────────────────────────────
 CAMERA_INDEX = 0
 
@@ -81,6 +87,15 @@ COL_HUD_BAR    = (60, 220, 255)
 COL_HUD_BAR_BG = (40, 40, 40)
 
 # ── Pentathlon (filled in as we build each activity) ─────────────────────────
+# Ordered list of activity keys for the circuit. Comment out entries to
+# shorten the circuit for testing/tweaking a single event. Keys must match
+# circuit.ACTIVITY_REGISTRY.
+CIRCUIT_ACTIVITIES = [
+    "high_knees",
+    "vertical_jump",
+    "reaction_wall",
+]
+
 # Athlete titles by total points
 ATHLETE_TITLES = [
     (1500, "Rookie"),

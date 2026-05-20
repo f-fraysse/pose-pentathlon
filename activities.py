@@ -1,5 +1,9 @@
+import math
+import random
 from collections import deque
 from statistics import median
+
+import cv2
 
 import config as cfg
 import ui
@@ -180,6 +184,124 @@ class VerticalJumpActivity:
         f = max(0.0, min(1.0, f))
         pts = int(round(f * 1000))
         return {"points": pts, "raw": self.peak_ratio, "display_str": f"{pts}"}
+
+    def highlight(self):
+        return {"joints": self.HL_JOINTS, "bones": self.HL_BONES}
+
+
+class ReactionWallActivity:
+    name = "Reaction Wall"
+    instruction_text = "Touch the targets as fast as you can - use both hands!"
+    instruction_image = None
+    duration_s = 20.0
+
+    # Shoulders, elbows, wrists
+    HL_JOINTS = {5, 6, 7, 8, 9, 10}
+    HL_BONES = {(5, 6), (5, 7), (7, 9), (6, 8), (8, 10)}
+
+    MAX_TARGETS = 2
+    TARGET_RADIUS_FRAC = 0.06
+    HIT_RADIUS_MULT = 1.3          # wrist within this * visual radius counts as a hit
+    SPAWN_SIDES_FRAC = 0.20
+    SPAWN_TOP_FRAC = 0.10
+    SPAWN_BOTTOM_FRAC = 0.70
+    MIN_SEPARATION_FRAC = 0.20
+    SPAWN_TRIES = 20
+
+    def __init__(self):
+        self.hits = 0
+        self._targets = []  # list of (x, y) pixel centres
+        self._rng = random.Random()
+        self._last_radius = 50
+        self._pulse_t = 0.0
+
+    def reset(self):
+        self.hits = 0
+        self._targets = []
+        self._pulse_t = 0.0
+
+    def update(self, keypoints, t_elapsed):
+        if not self._targets:
+            return
+        wrists = []
+        for wid in (9, 10):
+            if wid in keypoints:
+                wrists.append(keypoints[wid].position)
+        if not wrists:
+            return
+
+        r = self._last_radius * self.HIT_RADIUS_MULT
+        r2 = r * r
+        survivors = []
+        for (tx, ty) in self._targets:
+            hit = False
+            for w in wrists:
+                dx = float(w[0]) - tx
+                dy = float(w[1]) - ty
+                if dx * dx + dy * dy <= r2:
+                    hit = True
+                    break
+            if hit:
+                self.hits += 1
+            else:
+                survivors.append((tx, ty))
+        self._targets = survivors
+
+    def _spawn_target(self, frame_w, frame_h, radius):
+        x_min = int(self.SPAWN_SIDES_FRAC * frame_w + radius)
+        x_max = int((1.0 - self.SPAWN_SIDES_FRAC) * frame_w - radius)
+        y_min = int(self.SPAWN_TOP_FRAC * frame_h + radius)
+        y_max = int(self.SPAWN_BOTTOM_FRAC * frame_h - radius)
+        if x_max <= x_min or y_max <= y_min:
+            return None
+        min_sep = self.MIN_SEPARATION_FRAC * frame_h
+        min_sep2 = min_sep * min_sep
+        for _ in range(self.SPAWN_TRIES):
+            x = self._rng.randint(x_min, x_max)
+            y = self._rng.randint(y_min, y_max)
+            ok = True
+            for (tx, ty) in self._targets:
+                if (x - tx) ** 2 + (y - ty) ** 2 < min_sep2:
+                    ok = False
+                    break
+            if ok:
+                return (x, y)
+        return None
+
+    def draw(self, frame):
+        h, w = frame.shape[:2]
+        radius = max(8, int(self.TARGET_RADIUS_FRAC * h))
+        self._last_radius = radius
+
+        while len(self._targets) < self.MAX_TARGETS:
+            pos = self._spawn_target(w, h, radius)
+            if pos is None:
+                break
+            self._targets.append(pos)
+
+        self._pulse_t += 0.05
+        pulse = 1.0 + 0.08 * math.sin(8.0 * self._pulse_t)
+        r_draw = max(6, int(radius * pulse))
+        for (tx, ty) in self._targets:
+            cv2.circle(frame, (tx, ty), r_draw, cfg.COL_HUD_BAR,
+                       thickness=-1, lineType=cv2.LINE_AA)
+            cv2.circle(frame, (tx, ty), r_draw, (20, 20, 20),
+                       thickness=2, lineType=cv2.LINE_AA)
+
+        raw_min, raw_max = cfg.SCORE_MAP["reaction_wall"]
+        span = max(1e-6, raw_max - raw_min)
+        cur_frac = (self.hits - raw_min) / span
+        ui.draw_power_bar(frame, ui.left_power_bar_rect(frame), cur_frac)
+
+    def is_finished(self, t_elapsed):
+        return t_elapsed >= self.duration_s
+
+    def get_result(self):
+        raw_min, raw_max = cfg.SCORE_MAP["reaction_wall"]
+        f = (self.hits - raw_min) / max(1e-6, (raw_max - raw_min))
+        f = max(0.0, min(1.0, f))
+        pts = int(round(f * 1000))
+        return {"points": pts, "raw": self.hits, "display_str": f"{self.hits}"}
 
     def highlight(self):
         return {"joints": self.HL_JOINTS, "bones": self.HL_BONES}

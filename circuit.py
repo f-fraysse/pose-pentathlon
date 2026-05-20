@@ -3,7 +3,7 @@ from enum import Enum, auto
 
 import config as cfg
 import ui
-from activities import HighKneesActivity, VerticalJumpActivity
+from activities import HighKneesActivity, VerticalJumpActivity, ReactionWallActivity
 
 
 class State(Enum):
@@ -162,9 +162,23 @@ class Circuit:
         self._enter(State.ATTRACT)
 
 
+ACTIVITY_REGISTRY = {
+    "high_knees":    HighKneesActivity,
+    "vertical_jump": VerticalJumpActivity,
+    "reaction_wall": ReactionWallActivity,
+}
+
+
 def build_demo_circuit():
-    """High Knees + Vertical Jump (the design-doc MVP)."""
-    return Circuit([
-        HighKneesActivity(),
-        VerticalJumpActivity(),
-    ])
+    """Build the circuit from cfg.CIRCUIT_ACTIVITIES (ordered list of keys)."""
+    activities = []
+    for key in cfg.CIRCUIT_ACTIVITIES:
+        if key not in ACTIVITY_REGISTRY:
+            raise ValueError(
+                f"Unknown activity '{key}' in cfg.CIRCUIT_ACTIVITIES. "
+                f"Known keys: {sorted(ACTIVITY_REGISTRY)}"
+            )
+        activities.append(ACTIVITY_REGISTRY[key]())
+    if not activities:
+        raise ValueError("cfg.CIRCUIT_ACTIVITIES is empty")
+    return Circuit(activities)

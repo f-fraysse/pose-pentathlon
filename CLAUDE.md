@@ -22,7 +22,17 @@ silently. See Gotchas.
   `python -c "import onnxruntime as ort; print(ort.get_available_providers())"`
   and confirm `CUDAExecutionProvider` is present. Fix:
   `pip uninstall -y onnxruntime onnxruntime-gpu && pip install onnxruntime-gpu==1.20.1`.
-  `requirements.txt` already carries a comment guard.
+  `requirements.txt` already carries a comment guard. **Recurs across
+  machines** because `rtmlib==0.0.15` declares `onnxruntime` (CPU) as a
+  hard dep, so any `pip install rtmlib` pulls the CPU build back in
+  alongside the GPU one. Don't reinstall rtmlib after fixing.
+- **RTMO whole-skeleton flicker.** rtmlib's `Body(..., pose='rtmo')`
+  hardcodes the RTMO person-detection threshold to 0.7, which drops the
+  entire skeleton for 1-2 frames during fast motion. We override it via
+  `cfg.RTMO_SCORE_THR` applied as `self.model.pose_model.score_thr` in
+  [pose.py](pose.py) right after `Body(...)` construction. Distinct from
+  `cfg.SCORE_THRESHOLD` which is the **per-keypoint** filter inside
+  `PoseDetector.detect`.
 - **Mirror BEFORE detect/draw.** Flipping the final composited frame reverses
   the on-screen text too. [main.py](main.py) flips immediately after
   `cap_thread.read()`; keep it that way.
@@ -80,7 +90,17 @@ rect, frac, peak_frac=None)`; layout is standard via
 `ui.left_power_bar_rect(frame)`. Each activity decides what `frac` and
 `peak_frac` mean — High Knees uses **rep frequency** (reps/sec over a
 rolling 3s window, max at `MAX_FREQ_HZ = 4.0`); Vertical Jump uses
-**jump ratio** (rise / leg-length, max at `cfg.SCORE_MAP["vertical_jump"][1]`).
+**jump ratio** (rise / leg-length, max at `cfg.SCORE_MAP["vertical_jump"][1]`);
+Reaction Wall uses **hits / SCORE_MAP max** (no peak marker — count is
+monotone).
+
+## Circuit composition
+
+The activity list is built by `circuit.build_demo_circuit()` from
+`cfg.CIRCUIT_ACTIVITIES` (ordered list of keys) via the
+`circuit.ACTIVITY_REGISTRY` `{key: Class}` dict. To test a single event,
+comment out the others in `CIRCUIT_ACTIVITIES`. New events register by
+adding one line to `ACTIVITY_REGISTRY` and listing the key.
 
 ## Lab-tuning notes
 
@@ -102,6 +122,12 @@ the lab machine, watch for:
   feel too easy/hard, narrow or widen.
 - **Vertical Jump baseline window.** `BASELINE_WINDOW_S = 1.0` —
   increase if the lab setup has students drifting before settling.
+- **Reaction Wall hit feel.** `TARGET_RADIUS_FRAC` controls the visual
+  size of targets; `HIT_RADIUS_MULT` (default 1.3) is the multiplier
+  that defines the actual hit-test radius (so hits register when the
+  wrist is just outside the visible circle). Bump
+  `cfg.SCORE_MAP["reaction_wall"]` upper bound from 20 if students
+  routinely exceed that in 20 s.
 
 ## Status
 
@@ -116,9 +142,13 @@ the lab machine, watch for:
   - Vertical Jump: hip-centre Y tracked against a 1s standing baseline,
     normalised by leg length, peak ratio scored via `cfg.SCORE_MAP`,
     height power bar with persistent peak marker.
-- **Next options**: M5 (Reaction Wall), M6 (Punch Power / Javelin —
-  shared displacement-burst detector), or M7 polish (instruction images,
-  day leaderboard, sound). All scoring values likely need lab-tuning
-  first (see Lab-tuning notes above).
+- **M5 complete**: Reaction Wall. Two cyan circles spawn in a reachable
+  zone (avoiding edges + feet); hit on wrist (kpts 9/10) within
+  `HIT_RADIUS_MULT * visual_radius` counts +1 and respawns. Hit count
+  scored via `cfg.SCORE_MAP["reaction_wall"]`.
+- **Next options**: M6 (Punch Power / Javelin — shared displacement-burst
+  detector) or M7 polish (instruction images, day leaderboard, sound).
+  All scoring values likely need lab-tuning first (see Lab-tuning notes
+  above).
 
 See [README.md](README.md) for the full milestone ladder.

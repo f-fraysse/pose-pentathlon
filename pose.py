@@ -65,6 +65,7 @@ class PoseDetector:
                 pose='rtmo',
                 backend=cfg.POSE_BACKEND,
                 device=cfg.POSE_DEVICE)
+            self.model.pose_model.score_thr = cfg.RTMO_SCORE_THR
         else:
             self.model = Wholebody(
                 mode='lightweight',
