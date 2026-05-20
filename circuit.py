@@ -3,7 +3,7 @@ from enum import Enum, auto
 
 import config as cfg
 import ui
-from activities import HighKneesActivity, VerticalJumpActivity, ReactionWallActivity
+from activities import HighKneesActivity, VerticalJumpActivity, ReactionWallActivity, PunchPowerActivity
 
 
 class State(Enum):
@@ -166,6 +166,7 @@ ACTIVITY_REGISTRY = {
     "high_knees":    HighKneesActivity,
     "vertical_jump": VerticalJumpActivity,
     "reaction_wall": ReactionWallActivity,
+    "punch_power":   PunchPowerActivity,
 }
 
 

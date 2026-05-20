@@ -305,3 +305,102 @@ class ReactionWallActivity:
 
     def highlight(self):
         return {"joints": self.HL_JOINTS, "bones": self.HL_BONES}
+
+
+class PunchPowerActivity:
+    name = "Punch Power"
+    instruction_text = "Throw your hardest punches - either fist counts!"
+    instruction_image = None
+    duration_s = 10.0
+
+    # Shoulders, elbows, wrists
+    HL_JOINTS = {5, 6, 7, 8, 9, 10}
+    HL_BONES = {(5, 6), (5, 7), (7, 9), (6, 8), (8, 10)}
+
+    # We deviate from design doc 8.4: it specifies windowed integrated
+    # displacement, but that introduced a ~0.3s lag between the punch and
+    # the bar filling. Instead use the per-frame horizontal wrist velocity
+    # from PoseDetector (already MA-smoothed over 5 frames) normalised by
+    # arm length. Horizontal-only so vertical chops don't count.
+    # Units: arm-lengths per frame (so SCORE_MAP scale is FPS-dependent).
+
+    # Deadband below which per-side speed is treated as zero — masks the
+    # residual jitter on a still wrist after OneEuro smoothing. Tune up if
+    # standing still still shows bar; tune down if slow punches don't
+    # register.
+    MIN_SPEED = 0.02
+
+    # M7 polish ideas, deliberately deferred so M6a stays cheap:
+    #   - Wrist motion trail (fading polyline of last ~0.3s of wrist positions).
+    #   - Floating live-energy number near the leading wrist.
+    #   - Brief screen flash when current energy crosses a "big punch" threshold.
+
+    def _new_side(self, sh, el, wr):
+        return {
+            "sh": sh, "el": el, "wr": wr,
+            "arm_len": 0.0,        # running mean of |sh-el| + |el-wr|
+            "arm_n": 0,
+        }
+
+    def __init__(self):
+        self._sides = {
+            "L": self._new_side(5, 7, 9),
+            "R": self._new_side(6, 8, 10),
+        }
+        self.current_energy = 0.0
+        self.peak_energy = 0.0
+
+    def reset(self):
+        self._sides = {
+            "L": self._new_side(5, 7, 9),
+            "R": self._new_side(6, 8, 10),
+        }
+        self.current_energy = 0.0
+        self.peak_energy = 0.0
+
+    def update(self, keypoints, t_elapsed):
+        speeds = []
+        for s in self._sides.values():
+            sh, el, wr = s["sh"], s["el"], s["wr"]
+            # Update arm-length running mean when the full chain is visible
+            if sh in keypoints and el in keypoints and wr in keypoints:
+                shp = keypoints[sh].position
+                elp = keypoints[el].position
+                wrp = keypoints[wr].position
+                upper = ((shp[0] - elp[0]) ** 2 + (shp[1] - elp[1]) ** 2) ** 0.5
+                fore  = ((elp[0] - wrp[0]) ** 2 + (elp[1] - wrp[1]) ** 2) ** 0.5
+                seg = float(upper + fore)
+                s["arm_n"] += 1
+                s["arm_len"] += (seg - s["arm_len"]) / s["arm_n"]
+
+            # |horizontal velocity| / arm length, skip until arm_len bootstrapped
+            if wr in keypoints and s["arm_len"] > 1e-3:
+                vx = float(keypoints[wr].velocity[0])
+                speed = abs(vx) / s["arm_len"]
+                if speed >= self.MIN_SPEED:
+                    speeds.append(speed)
+
+        self.current_energy = max(speeds) if speeds else 0.0
+        if self.current_energy > self.peak_energy:
+            self.peak_energy = self.current_energy
+
+    def draw(self, frame):
+        raw_min, raw_max = cfg.SCORE_MAP["punch_power"]
+        span = max(1e-6, raw_max - raw_min)
+        cur_frac = (self.current_energy - raw_min) / span
+        peak_frac = (self.peak_energy - raw_min) / span
+        ui.draw_power_bar(frame, ui.left_power_bar_rect(frame),
+                          cur_frac, peak_frac=peak_frac)
+
+    def is_finished(self, t_elapsed):
+        return t_elapsed >= self.duration_s
+
+    def get_result(self):
+        raw_min, raw_max = cfg.SCORE_MAP["punch_power"]
+        f = (self.peak_energy - raw_min) / max(1e-6, (raw_max - raw_min))
+        f = max(0.0, min(1.0, f))
+        pts = int(round(f * 1000))
+        return {"points": pts, "raw": self.peak_energy, "display_str": f"{pts}"}
+
+    def highlight(self):
+        return {"joints": self.HL_JOINTS, "bones": self.HL_BONES}

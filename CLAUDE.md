@@ -128,6 +128,16 @@ the lab machine, watch for:
   wrist is just outside the visible circle). Bump
   `cfg.SCORE_MAP["reaction_wall"]` upper bound from 20 if students
   routinely exceed that in 20 s.
+- **Punch Power score saturation.** `cfg.SCORE_MAP["punch_power"]` upper
+  bound is `0.9` (units: arm-lengths-of-horizontal-wrist-velocity per
+  *frame* — so the scale is FPS-dependent; re-tune on the lab machine if
+  its FPS differs significantly from the desk rig). Lower it if the bar
+  never moves; raise it if students max out in one punch.
+- **Punch Power jitter deadband.** `PunchPowerActivity.MIN_SPEED = 0.02`
+  is the per-side speed threshold below which motion is ignored, so a
+  still wrist after OneEuro smoothing doesn't flicker the bar. Tune up
+  if standing still still shows bar; tune down if slow punches don't
+  register.
 
 ## Status
 
@@ -146,9 +156,20 @@ the lab machine, watch for:
   zone (avoiding edges + feet); hit on wrist (kpts 9/10) within
   `HIT_RADIUS_MULT * visual_radius` counts +1 and respawns. Hit count
   scored via `cfg.SCORE_MAP["reaction_wall"]`.
-- **Next options**: M6 (Punch Power / Javelin — shared displacement-burst
-  detector) or M7 polish (instruction images, day leaderboard, sound).
-  All scoring values likely need lab-tuning first (see Lab-tuning notes
-  above).
+- **M6a complete**: Punch Power. Per-frame `|horizontal wrist velocity| /
+  arm_length`, where arm_length is a running mean of `|sh-el| + |el-wr|`
+  (bend-invariant). Velocity comes from `PoseDetector` (MA-smoothed over
+  5 frames). Per-frame current energy is `max(left, right)`; peak across
+  the 10 s duration is scored via `cfg.SCORE_MAP["punch_power"]`. Live
+  power bar with persistent peak marker matches High Knees / Vertical
+  Jump. Deviates from design doc 8.4 (which specifies windowed integrated
+  displacement) because that introduced a visible ~0.3 s lag between the
+  punch and the bar filling — velocity-based is instant. Horizontal-only
+  so vertical motion doesn't count.
+- **Next options**: M6b (Javelin — reuse the displacement-burst pattern
+  from `PunchPowerActivity`; the design doc says this is "cheap" after
+  Punch Power) or M7 polish (instruction images, day leaderboard, sound,
+  Punch Power wrist trail / energy-number / hit flash). All scoring
+  values likely need lab-tuning first (see Lab-tuning notes above).
 
 See [README.md](README.md) for the full milestone ladder.
