@@ -138,6 +138,42 @@ the lab machine, watch for:
   still wrist after OneEuro smoothing doesn't flicker the bar. Tune up
   if standing still still shows bar; tune down if slow punches don't
   register.
+- **Stick the Landing — single-leg detection.**
+  `StickTheLandingActivity.STANCE_ANKLE_DIFF_THR = 0.25` (fraction of
+  leg length). Raise to 0.30 if students cheat with a slightly lifted
+  foot; lower to 0.20 if a clean stance gets rejected as "not single-leg".
+- **Stick the Landing — steadiness scoring.** `BALANCE_STD_BAD = 0.05`
+  (stance) and `LAND_STD_BAD = 0.08` (landing) set how forgiving the
+  steadiness scoring is. Both are leg-length-normalised thresholds on
+  the *mean* per-keypoint (stdev_x + stdev_y) across `TRACKED_KPTS =
+  (7, 8, 9, 10, 11, 12, 13, 14)` — elbows, wrists, hips, knees,
+  equally weighted. So flailing arms tank the score along with hip
+  sway. Raise if everyone scores 0; lower if everyone scores 1000. If
+  you want arms to dominate / be ignored, edit `TRACKED_KPTS`.
+- **Stick the Landing — hop detection.** `HOP_AIRBORNE_THR = 0.08`
+  (standing-ankle must rise this much × leg_len above ground to count
+  as airborne) and `HOP_LAND_THR = 0.04` (must return within this ×
+  leg_len of ground to count as landed). Raise airborne threshold if
+  shuffling triggers the hop detector; lower if students can't get
+  high enough on the lab floor.
+- **Stick the Landing — accuracy zone.** `ACCURACY_HOT_DIST = 0.25` /
+  `ACCURACY_COLD_DIST = 0.75` (leg_len multiples) define the full-bonus
+  and zero-bonus distances of the landing hip-x from the target. Widen
+  the cold distance if even decent hops score 0 accuracy.
+- **Stick the Landing — phase budgets.** `STANCE_HOLD_S = 3.0` /
+  `STANCE_TIMEOUT_S = 5.0` / `HOP_TIMEOUT_S = 4.0` / `LAND_HOLD_S = 3.0`.
+  Total hard cap = `duration_s = 12.0` (matches worst-case timeout
+  chain 5+4+3). Note that STANCE_HOLD=3 inside a 5s budget leaves
+  only 2s of wobble allowed — bump `STANCE_TIMEOUT_S` (and `duration_s`)
+  if students struggle to settle. Match `duration_s` if you change any
+  budget.
+- **Stick the Landing — smoothing revisit.** Variances are computed
+  from the OneEuro-smoothed positions (same stream the skeleton uses).
+  OneEuro preserves slow sway and suppresses jitter, which is the right
+  trade-off for balance scoring. If lab measurements come out too
+  tightly clustered to discriminate students, consider exposing a
+  `position_raw` field from `PoseDetector` and computing sway from
+  that instead.
 
 ## Status
 
@@ -166,10 +202,22 @@ the lab machine, watch for:
   displacement) because that introduced a visible ~0.3 s lag between the
   punch and the bar filling — velocity-based is instant. Horizontal-only
   so vertical motion doesn't count.
+- **M7 complete**: Stick the Landing. First composite/multi-phase
+  activity. Internal `_StickPhase` enum (STANCE -> HOP -> LAND -> DONE)
+  with per-phase dispatch from `update()` and `draw()`. Composite score
+  = 0.4 · balance + 0.4 · land_stability + 0.2 · accuracy, all
+  computed in body-units (leg-length-normalised). Stillness measured
+  as the mean per-keypoint (stdev_x + stdev_y) across `TRACKED_KPTS`
+  (elbows + wrists + hips + knees) — flailing arms reduce the score.
+  Graceful degrade: phase timeouts zero that sub-score and continue
+  rather than aborting the activity. No `SCORE_MAP` entry — points are
+  computed directly from the composite quality. The phase-enum +
+  dispatch pattern is the template if future events grow phases.
 - **Next options**: M6b (Javelin — reuse the displacement-burst pattern
   from `PunchPowerActivity`; the design doc says this is "cheap" after
-  Punch Power) or M7 polish (instruction images, day leaderboard, sound,
-  Punch Power wrist trail / energy-number / hit flash). All scoring
-  values likely need lab-tuning first (see Lab-tuning notes above).
+  Punch Power) or M8 polish (instruction images, day leaderboard, sound,
+  Punch Power wrist trail / energy-number / hit flash, raw-position
+  source for Stick the Landing variance). All scoring values likely
+  need lab-tuning first (see Lab-tuning notes above).
 
 See [README.md](README.md) for the full milestone ladder.

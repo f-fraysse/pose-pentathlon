@@ -1,6 +1,7 @@
 import math
 import random
 from collections import deque
+from enum import Enum, auto
 from statistics import median
 
 import cv2
@@ -9,11 +10,18 @@ import config as cfg
 import ui
 
 
+class _StickPhase(Enum):
+    STANCE = auto()
+    HOP    = auto()
+    LAND   = auto()
+    DONE   = auto()
+
+
 class HighKneesActivity:
     name = "High Knees"
-    instruction_text = "Run on the spot. Lift those knees as high as you can!"
+    instruction_text = "Run on the spot. Lift those knees up!"
     instruction_image = None
-    duration_s = 20.0
+    duration_s = 12.0
 
     # Hip / knee / ankle on both sides
     HL_JOINTS = {11, 12, 13, 14, 15, 16}
@@ -22,8 +30,8 @@ class HighKneesActivity:
     UP_THRESHOLD = 0.20      # gap_norm < UP   -> leg counted as "up"
     DOWN_THRESHOLD = 0.40    # gap_norm > DOWN -> leg counted as "down"
 
-    FREQ_WINDOW_S = 3.0      # rolling window for the power bar's frequency
-    MAX_FREQ_HZ = 4.0        # 80 reps over 20s -> bar maxes at 4 reps/sec
+    FREQ_WINDOW_S = 2.0      # rolling window for the power bar's frequency
+    MAX_FREQ_HZ = 5.0        # 80 reps over 20s -> bar maxes at 4 reps/sec
 
     def __init__(self):
         self.reps = 0
@@ -95,7 +103,7 @@ class HighKneesActivity:
 
 class VerticalJumpActivity:
     name = "Vertical Jump"
-    instruction_text = "Crouch and jump as high as you can. Try a few times - your best counts!"
+    instruction_text = "Crouch and jump as high as you can. Best try counts!"
     instruction_image = None
     duration_s = 15.0
 
@@ -191,9 +199,9 @@ class VerticalJumpActivity:
 
 class ReactionWallActivity:
     name = "Reaction Wall"
-    instruction_text = "Touch the targets as fast as you can - use both hands!"
+    instruction_text = "Touch the targets as fast as you can!"
     instruction_image = None
-    duration_s = 20.0
+    duration_s = 15.0
 
     # Shoulders, elbows, wrists
     HL_JOINTS = {5, 6, 7, 8, 9, 10}
@@ -201,7 +209,7 @@ class ReactionWallActivity:
 
     MAX_TARGETS = 2
     TARGET_RADIUS_FRAC = 0.06
-    HIT_RADIUS_MULT = 1.3          # wrist within this * visual radius counts as a hit
+    HIT_RADIUS_MULT = 1.4          # wrist within this * visual radius counts as a hit
     SPAWN_SIDES_FRAC = 0.20
     SPAWN_TOP_FRAC = 0.10
     SPAWN_BOTTOM_FRAC = 0.70
@@ -309,7 +317,7 @@ class ReactionWallActivity:
 
 class PunchPowerActivity:
     name = "Punch Power"
-    instruction_text = "Throw your hardest punches - either fist counts!"
+    instruction_text = "Throw your hardest punch!"
     instruction_image = None
     duration_s = 10.0
 
@@ -401,6 +409,383 @@ class PunchPowerActivity:
         f = max(0.0, min(1.0, f))
         pts = int(round(f * 1000))
         return {"points": pts, "raw": self.peak_energy, "display_str": f"{pts}"}
+
+    def highlight(self):
+        return {"joints": self.HL_JOINTS, "bones": self.HL_BONES}
+
+
+class StickTheLandingActivity:
+    """3-phase composite event: single-leg stance -> sideways hop -> stick the
+    landing. No SCORE_MAP entry — the activity computes a composite 0..1
+    quality (40% balance + 40% landing stability + 20% accuracy) internally
+    and converts to points directly."""
+
+    name = "Stick the Landing"
+    instruction_text = ("Stand on one leg, hop to the target, "
+                        "then stick the landing!")
+    instruction_image = None
+    duration_s = 12.0   # hard cap: 5 (stance budget) + 4 (hop) + 3 (land)
+
+    # Whole body highlight — sway is now measured across hips+knees+elbows+wrists
+    HL_JOINTS = {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+    HL_BONES  = {(5, 7), (7, 9), (6, 8), (8, 10), (5, 6),
+                 (5, 11), (6, 12), (11, 12),
+                 (11, 13), (13, 15), (12, 14), (14, 16)}
+
+    # Keypoints whose sway counts toward the balance/landing stillness score.
+    # Equal weight per keypoint; flailing arms therefore tank stillness.
+    TRACKED_KPTS = (7, 8, 9, 10, 11, 12, 13, 14)
+
+    # Phase budgets and detection thresholds (all leg-length-normalised)
+    STANCE_HOLD_S         = 3.0
+    STANCE_TIMEOUT_S      = 5.0
+    HOP_TIMEOUT_S         = 4.0
+    LAND_HOLD_S           = 3.0
+    STANCE_ANKLE_DIFF_THR = 0.25
+    HOP_AIRBORNE_THR      = 0.08
+    HOP_LAND_THR          = 0.04
+    TARGET_DIST_FRAC      = 0.75   # × leg_len, distance from baseline_hip_x to target
+    TARGET_RADIUS         = 0.25
+    BALANCE_STD_BAD       = 0.05
+    LAND_STD_BAD          = 0.08
+    ACCURACY_HOT_DIST     = 0.25
+    ACCURACY_COLD_DIST    = 0.75
+    STEADY_WINDOW_S       = 0.5
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self._phase = _StickPhase.STANCE
+        self._phase_started_t = 0.0
+        # STANCE phase state
+        self._stance_started_t = None
+        # Per-keypoint sample dicts: {kpt_idx: [(x, y), ...]}
+        self._stance_samples = {}
+        self._land_samples = {}
+        # Shared (computed at end of STANCE, used in HOP+LAND)
+        self.standing_leg = None      # 'L' or 'R'
+        self.ground_y = None
+        self.baseline_hip_x = None
+        self.leg_len = None
+        self.target_x = None
+        # HOP phase
+        self._airborne_seen = False
+        self.landing_hip_x = None
+        # Live steadiness deque (for the power bar in STANCE/LAND)
+        # Element shape: (t, {kpt_idx: (x, y)})
+        self._steady_samples = deque()
+        # Sub-scores (default 0 so graceful degrade is automatic)
+        self.balance_quality = 0.0
+        self.land_stability_quality = 0.0
+        self.accuracy_quality = 0.0
+        # Last valid lower-body obs — used as fallback on STANCE timeout
+        self._last_lower = None
+        # Decorative pulse accumulator for the hop target
+        self._pulse_t = 0.0
+
+    # ── Phase machinery ──────────────────────────────────────────────────
+
+    def _enter_phase(self, new_phase, t_elapsed):
+        self._phase = new_phase
+        self._phase_started_t = t_elapsed
+
+    def _lower_body_obs(self, kpts):
+        """Return (hip_centre, leg_len, ankle_l, ankle_r) or None if missing."""
+        if 11 not in kpts or 12 not in kpts:
+            return None
+        if 15 not in kpts or 16 not in kpts:
+            return None
+        hl = kpts[11].position
+        hr = kpts[12].position
+        al = kpts[15].position
+        ar = kpts[16].position
+        hip_centre = ((float(hl[0]) + float(hr[0])) * 0.5,
+                      (float(hl[1]) + float(hr[1])) * 0.5)
+        legs = []
+        for hip, ankle in ((hl, al), (hr, ar)):
+            dx = float(hip[0] - ankle[0])
+            dy = float(hip[1] - ankle[1])
+            legs.append((dx * dx + dy * dy) ** 0.5)
+        leg_len = sum(legs) / len(legs)
+        return (hip_centre, leg_len,
+                (float(al[0]), float(al[1])),
+                (float(ar[0]), float(ar[1])))
+
+    def _extract_tracked(self, kpts):
+        """Return {kpt_idx: (x, y)} for whichever TRACKED_KPTS are present."""
+        out = {}
+        for k in self.TRACKED_KPTS:
+            if k in kpts:
+                p = kpts[k].position
+                out[k] = (float(p[0]), float(p[1]))
+        return out
+
+    # ── update / draw entry points ───────────────────────────────────────
+
+    def update(self, keypoints, t_elapsed):
+        obs = self._lower_body_obs(keypoints)
+        tracked = self._extract_tracked(keypoints)
+        if obs is not None:
+            self._last_lower = obs
+        if tracked:
+            self._steady_samples.append((t_elapsed, tracked))
+            cutoff = t_elapsed - self.STEADY_WINDOW_S
+            while self._steady_samples and self._steady_samples[0][0] < cutoff:
+                self._steady_samples.popleft()
+
+        if self._phase is _StickPhase.STANCE:
+            self._update_stance(obs, tracked, t_elapsed)
+        elif self._phase is _StickPhase.HOP:
+            self._update_hop(obs, t_elapsed)
+        elif self._phase is _StickPhase.LAND:
+            self._update_land(tracked, t_elapsed)
+
+    def _update_stance(self, obs, tracked, t_elapsed):
+        if obs is None:
+            self._stance_started_t = None
+            self._stance_samples = {}
+        else:
+            leg_len, al, ar = obs[1], obs[2], obs[3]
+            ankle_diff = abs(al[1] - ar[1])
+            valid = ankle_diff > self.STANCE_ANKLE_DIFF_THR * leg_len
+            if valid:
+                if self._stance_started_t is None:
+                    self._stance_started_t = t_elapsed
+                    self._stance_samples = {}
+                for k, p in tracked.items():
+                    self._stance_samples.setdefault(k, []).append(p)
+                if (t_elapsed - self._stance_started_t) >= self.STANCE_HOLD_S:
+                    self._finalise_stance(obs)
+                    self._enter_phase(_StickPhase.HOP, t_elapsed)
+                    return
+            else:
+                self._stance_started_t = None
+                self._stance_samples = {}
+
+        if (t_elapsed - self._phase_started_t) >= self.STANCE_TIMEOUT_S:
+            self.balance_quality = 0.0
+            self._init_hop_defaults()
+            self._enter_phase(_StickPhase.HOP, t_elapsed)
+
+    def _finalise_stance(self, obs):
+        leg_len, al, ar = obs[1], obs[2], obs[3]
+        # Larger y = lower on screen = grounded foot.
+        if al[1] >= ar[1]:
+            self.standing_leg = 'L'
+            self.ground_y = al[1]
+        else:
+            self.standing_leg = 'R'
+            self.ground_y = ar[1]
+        self.leg_len = leg_len
+        # baseline_hip_x = mean of x across hip samples collected during stance
+        hip_xs = []
+        for k in (11, 12):
+            if k in self._stance_samples:
+                hip_xs.extend(p[0] for p in self._stance_samples[k])
+        self.baseline_hip_x = (sum(hip_xs) / len(hip_xs)) if hip_xs else obs[0][0]
+        # Multi-keypoint sway, leg-length-normalised
+        sway_norm = self._multi_kp_sway(self._stance_samples, leg_len)
+        self.balance_quality = max(0.0, min(1.0,
+            1.0 - sway_norm / self.BALANCE_STD_BAD))
+        # Hop towards the standing-leg side (target on the SAME side as the
+        # grounded foot). kpt 15 = L ankle on image-left after mirror; for
+        # the user, "standing on left leg" -> image-left -> direction -1.
+        direction = -1.0 if self.standing_leg == 'L' else 1.0
+        self.target_x = self.baseline_hip_x + direction * self.TARGET_DIST_FRAC * leg_len
+
+    def _init_hop_defaults(self):
+        """Seed HOP-phase state from last-known obs after a STANCE timeout."""
+        if self._last_lower is None:
+            self.standing_leg = 'L'
+            self.leg_len = 100.0
+            self.ground_y = 500.0
+            self.baseline_hip_x = 400.0
+        else:
+            hip_centre, leg_len, al, ar = self._last_lower
+            if al[1] >= ar[1]:
+                self.standing_leg = 'L'
+                self.ground_y = al[1]
+            else:
+                self.standing_leg = 'R'
+                self.ground_y = ar[1]
+            self.leg_len = leg_len
+            self.baseline_hip_x = hip_centre[0]
+        direction = -1.0 if self.standing_leg == 'L' else 1.0
+        self.target_x = self.baseline_hip_x + direction * self.TARGET_DIST_FRAC * self.leg_len
+
+    def _update_hop(self, obs, t_elapsed):
+        if obs is not None and self.ground_y is not None and self.leg_len is not None:
+            hip_centre, _, al, ar = obs
+            standing_ankle_y = al[1] if self.standing_leg == 'L' else ar[1]
+            if standing_ankle_y < self.ground_y - self.HOP_AIRBORNE_THR * self.leg_len:
+                self._airborne_seen = True
+            elif (self._airborne_seen
+                  and standing_ankle_y >= self.ground_y - self.HOP_LAND_THR * self.leg_len):
+                self.landing_hip_x = hip_centre[0]
+                self._compute_accuracy()
+                self._enter_phase(_StickPhase.LAND, t_elapsed)
+                return
+
+        if (t_elapsed - self._phase_started_t) >= self.HOP_TIMEOUT_S:
+            self.accuracy_quality = 0.0
+            self._enter_phase(_StickPhase.LAND, t_elapsed)
+
+    def _compute_accuracy(self):
+        if (self.landing_hip_x is None
+                or self.target_x is None
+                or self.leg_len is None
+                or self.leg_len < 1e-3):
+            self.accuracy_quality = 0.0
+            return
+        dist_norm = abs(self.landing_hip_x - self.target_x) / self.leg_len
+        if dist_norm <= self.ACCURACY_HOT_DIST:
+            self.accuracy_quality = 1.0
+        elif dist_norm >= self.ACCURACY_COLD_DIST:
+            self.accuracy_quality = 0.0
+        else:
+            span = self.ACCURACY_COLD_DIST - self.ACCURACY_HOT_DIST
+            self.accuracy_quality = 1.0 - (dist_norm - self.ACCURACY_HOT_DIST) / span
+
+    def _update_land(self, tracked, t_elapsed):
+        if tracked:
+            for k, p in tracked.items():
+                self._land_samples.setdefault(k, []).append(p)
+        if (t_elapsed - self._phase_started_t) >= self.LAND_HOLD_S:
+            self._finalise_land()
+            self._enter_phase(_StickPhase.DONE, t_elapsed)
+
+    def _finalise_land(self):
+        if not self._land_samples or self.leg_len is None or self.leg_len < 1e-3:
+            self.land_stability_quality = 0.0
+            return
+        sway_norm = self._multi_kp_sway(self._land_samples, self.leg_len)
+        if not math.isfinite(sway_norm):
+            self.land_stability_quality = 0.0
+            return
+        self.land_stability_quality = max(0.0, min(1.0,
+            1.0 - sway_norm / self.LAND_STD_BAD))
+
+    def _multi_kp_sway(self, samples_dict, leg_len):
+        """Mean per-keypoint (stdev_x + stdev_y) across keypoints, divided by
+        leg_len. Keypoints with <2 samples are skipped. Returns +inf if no
+        keypoint contributes (caller treats as "no data, score 0")."""
+        if leg_len < 1e-3:
+            return float("inf")
+        per_kp = []
+        for pts in samples_dict.values():
+            if len(pts) < 2:
+                continue
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            per_kp.append(self._stdev(xs) + self._stdev(ys))
+        if not per_kp:
+            return float("inf")
+        return (sum(per_kp) / len(per_kp)) / leg_len
+
+    @staticmethod
+    def _stdev(values):
+        n = len(values)
+        if n < 2:
+            return 0.0
+        m = sum(values) / n
+        var = sum((v - m) ** 2 for v in values) / n
+        return var ** 0.5
+
+    def _live_steadiness_frac(self):
+        if len(self._steady_samples) < 2:
+            return 0.0
+        # Use the finalised leg_len after stance, else the latest observation
+        # so the bar is live during the stance phase too.
+        leg_len = self.leg_len
+        if leg_len is None and self._last_lower is not None:
+            leg_len = self._last_lower[1]
+        if leg_len is None or leg_len < 1e-3:
+            return 0.0
+        # Re-shard the rolling deque into per-keypoint series
+        per_kp = {}
+        for entry in self._steady_samples:
+            for k, p in entry[1].items():
+                per_kp.setdefault(k, []).append(p)
+        sway_norm = self._multi_kp_sway(per_kp, leg_len)
+        if not math.isfinite(sway_norm):
+            return 0.0
+        thr = self.LAND_STD_BAD if self._phase is _StickPhase.LAND else self.BALANCE_STD_BAD
+        return max(0.0, min(1.0, 1.0 - sway_norm / thr))
+
+    # ── Drawing ──────────────────────────────────────────────────────────
+
+    def draw(self, frame):
+        h = frame.shape[0]
+
+        # Steadiness power bar — only while we're measuring (STANCE + LAND)
+        if self._phase in (_StickPhase.STANCE, _StickPhase.LAND):
+            ui.draw_power_bar(frame, ui.left_power_bar_rect(frame),
+                              self._live_steadiness_frac())
+
+        scale_heading = ui._scale_for(h, cfg.UI_HEADING_FRAC)
+        if self._phase is _StickPhase.STANCE:
+            ui.text_centered(frame, "Stand on one leg!", y=int(h * 0.18),
+                             scale=scale_heading, color=cfg.COL_PRIMARY,
+                             panel_pad=14)
+        elif self._phase is _StickPhase.HOP:
+            self._draw_hop_overlay(frame)
+        elif self._phase is _StickPhase.LAND:
+            ui.text_centered(frame, "Stick it!", y=int(h * 0.18),
+                             scale=scale_heading, color=cfg.COL_PRIMARY,
+                             panel_pad=14)
+
+    def _draw_hop_overlay(self, frame):
+        h = frame.shape[0]
+        if (self.target_x is not None
+                and self.ground_y is not None
+                and self.leg_len is not None):
+            tx = int(self.target_x)
+            ty = int(self.ground_y)
+            r = max(8, int(self.TARGET_RADIUS * self.leg_len))
+            self._pulse_t += 0.05
+            pulse = 1.0 + 0.10 * math.sin(8.0 * self._pulse_t)
+            r_draw = max(6, int(r * pulse))
+            cv2.circle(frame, (tx, ty), r_draw, cfg.COL_ACCENT, -1, cv2.LINE_AA)
+            cv2.circle(frame, (tx, ty), r_draw, (20, 20, 20), 2, cv2.LINE_AA)
+
+        # Direction cue derived from where the target actually is — robust
+        # to future direction changes.
+        target_right = (self.target_x is not None
+                        and self.baseline_hip_x is not None
+                        and self.target_x >= self.baseline_hip_x)
+        msg = "HOP >>" if target_right else "<< HOP"
+        scale = ui._scale_for(h, cfg.UI_HEADING_FRAC * 1.2)
+        ui.text_centered(frame, msg, y=int(h * 0.18),
+                         scale=scale, color=cfg.COL_ACCENT, panel_pad=18)
+
+    def is_finished(self, t_elapsed):
+        return self._phase is _StickPhase.DONE or t_elapsed >= self.duration_s
+
+    def get_result(self):
+        # Defensive: hard duration cap might fire while we're still in LAND
+        # (or earlier). Finalise any pending sub-score so we never report 0
+        # just because the phase didn't formally transition to DONE.
+        if self._phase is _StickPhase.LAND and self._land_samples:
+            self._finalise_land()
+        final = (0.4 * self.balance_quality
+                 + 0.4 * self.land_stability_quality
+                 + 0.2 * self.accuracy_quality)
+        final = max(0.0, min(1.0, final))
+        pts = int(round(final * 1000))
+        # display_str drives the live HUD top-right cell. Show the current
+        # phase so the spectator strip reads "STAND" / "HOP" / "STICK" while
+        # the activity runs; once done, show the points (only seen briefly
+        # if at all, since Circuit moves to TRANSITION immediately).
+        if self._phase is _StickPhase.STANCE:
+            disp = "STAND"
+        elif self._phase is _StickPhase.HOP:
+            disp = "HOP"
+        elif self._phase is _StickPhase.LAND:
+            disp = "STICK"
+        else:
+            disp = f"{pts}"
+        return {"points": pts, "raw": final, "display_str": disp}
 
     def highlight(self):
         return {"joints": self.HL_JOINTS, "bones": self.HL_BONES}

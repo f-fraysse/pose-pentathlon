@@ -204,14 +204,32 @@ feel, not physics.
 - A fill bar shows the current best energy.
 - Score: peak energy → points.
 
-### 8.5 Javelin Throw
-- Mechanically shares the displacement-burst detector with Punch Power — reuse
-  that code. Detect a throwing burst of the wrist, optionally factor release
-  angle from the forearm vector.
-- Map burst magnitude to an animated projectile arc and a "distance".
-- Score: distance → points.
+### 8.5 Stick the Landing
+- 3-phase composite event:
+  1. **Stance (3 s)** — hold a single-leg stand; detect a raised ankle
+     `> 0.25 · leg_length` above the grounded one. Log sway across a set of
+     tracked keypoints (elbows, wrists, hips, knees) — flailing tanks the
+     score. → static balance sub-score.
+  2. **Hop (≤4 s)** — a glowing target appears on the standing-leg side
+     (~0.75 · leg_length away from the baseline hip). Cue "HOP". Detect the
+     hop as a brief airborne window from the standing-ankle Y rising above
+     ground and returning. Capture: did the hip-centre X end up near the
+     target? → landing-accuracy sub-score.
+  3. **Stabilise (3 s)** — after landing, log sway again for 3 s →
+     landing-stability sub-score.
+- Composite: 0.4 · balance + 0.4 · landing stability + 0.2 · accuracy →
+  0..1000. All sub-metrics body-unit normalised (sway divided by leg length;
+  hip-to-target distance divided by leg length).
+- **Graceful degrade**: each phase has a timeout (stance 5 s, hop 4 s, land
+  fixed 3 s). On timeout the corresponding sub-score is set to 0 and the
+  activity continues — nobody gets stuck on stage.
 
-> Note: 8.4 and 8.5 share a detector. Build 8.4 first, then 8.5 is cheap.
+> Originally event 5 was a **Javelin Throw** sharing the displacement-burst
+> detector with Punch Power. Stick the Landing was chosen instead — it
+> exercises a different physical quality (balance) and gives the codebase a
+> multi-phase activity template (an internal `_StickPhase` enum with
+> per-phase dispatch from `update()` and `draw()`). Javelin is deferred to
+> M8 polish.
 
 ## 9. Scoring & pentathlon composite
 
@@ -256,8 +274,9 @@ feel, not physics.
   detected person with the largest bounding box (closest to camera) and ignore
   the rest.
 - **Latency-tolerant by design**: count-based events (reaction wall, high knees)
-  and displacement-integral events (punch, javelin) all tolerate modest webcam
-  FPS and display latency. Do not introduce any true reaction-time scoring.
+  and velocity / sway events (punch, stick the landing) all tolerate modest
+  webcam FPS and display latency. Do not introduce any true reaction-time
+  scoring.
 - Run at a sensible display size (~1280×720). Threaded capture handles the rest.
 
 ## 12. Build order — milestones
@@ -276,8 +295,17 @@ finished, demoable exhibit.
 4. **M4 — Real events 1 & 2.** Implement High Knees + Vertical Jump.
    ← **This is the MVP: a complete, polished 2-event pentathlon.**
 5. **M5 — Reaction Wall.**
-6. **M6 — Punch Power, then Javelin** (shared displacement-burst detector).
-7. **M7 — Polish.** Instruction images, day leaderboard, optional sound.
+6. **M6 — Punch Power.** Per-frame `|horizontal wrist velocity| / arm_length`
+   (arm_length = running mean of upper-arm + forearm, bend-invariant). 5-frame
+   MA-smoothed velocity, deadband threshold, peak-hold power bar.
+   *Originally paired with Javelin via a shared displacement-burst detector;
+   Javelin deferred to M8.*
+7. **M7 — Stick the Landing** (replaces the original Javelin event as #5).
+   3-phase composite (single-leg stance → sideways hop → stabilise). Composite
+   score from balance + landing stability + landing accuracy. First multi-phase
+   activity; introduces a `_StickPhase` enum + per-phase dispatch pattern.
+8. **M8 — Polish.** Instruction images, day leaderboard, optional sound;
+   Javelin throw if time permits (reuse the punch detector).
 
 ## 13. First task for Claude Code
 

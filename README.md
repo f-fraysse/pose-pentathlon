@@ -35,14 +35,15 @@ Requires a CUDA-capable GPU (onnxruntime-gpu, pinned to 1.20.1).
 - **M3 — Formal `Activity` ABC** (skipped) — duck typing covers it; see CLAUDE.md
 - **M4 — Real events: High Knees + Vertical Jump (MVP)** (done) — hysteresis-based rep counting, hip-centre jump tracking, per-event skeleton highlight, vertical power bars with persistent peak markers. Score endpoints in `config.py` likely need lab-tuning.
 - **M5 — Reaction Wall** (done) — two simultaneous target circles in a reachable zone, wrist-keypoint hit detection with tunable `HIT_RADIUS_MULT`, hit count scored via `cfg.SCORE_MAP["reaction_wall"]`. Circuit composition is now driven by `cfg.CIRCUIT_ACTIVITIES`, so individual events can be commented out for testing.
-- M6 — Punch Power + Javelin
-- M7 — Polish: instruction images, day leaderboard, optional sound
+- **M6 — Punch Power** (done) — per-frame `|horizontal wrist velocity| / arm_length` (arm_length is a bend-invariant running mean of upper-arm + forearm). Velocity is the 5-frame MA from `PoseDetector`; a deadband zeros sub-jitter motion; live power bar with persistent peak marker. *Originally paired with Javelin via a shared displacement-burst detector; Javelin deferred to M8.*
+- **M7 — Stick the Landing** (done) — replaces the original Javelin event as #5. 3-phase composite: (1) hold a single-leg stand for 3 s → static balance sub-score from multi-keypoint sway across elbows + wrists + hips + knees (flailing arms tank the score), (2) hop sideways to a glowing target ~0.75 leg-lengths away on the standing-leg side → landing-accuracy sub-score from hip-x distance to the target, (3) hold steady for 3 s after landing → landing-stability sub-score. Composite = 0.4 balance + 0.4 land-stability + 0.2 accuracy → 0..1000. Graceful degrade: phase timeouts zero that sub-score and continue. First multi-phase activity — introduces a `_StickPhase` enum + per-phase dispatch as a template for future composite events.
+- M8 — Polish: instruction images, day leaderboard, optional sound; Javelin if time permits.
 
 ## Project files
 
 - `main.py` — capture/pose loop + circuit dispatch
 - `circuit.py` — `State`, `StubActivity`, `Circuit`, `build_demo_circuit`
-- `activities.py` — real event classes: `HighKneesActivity`, `VerticalJumpActivity`
+- `activities.py` — real event classes: `HighKneesActivity`, `VerticalJumpActivity`, `ReactionWallActivity`, `PunchPowerActivity`, `StickTheLandingActivity`
 - `ui.py` — primitives (panel, progress_bar, power_bar, big_digit, text helpers) + screen renderers
 - `config.py` — single source for tracking / UI sizing / state-machine timings / `SCORE_MAP`
 
