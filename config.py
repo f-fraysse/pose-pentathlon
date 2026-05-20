@@ -111,8 +111,8 @@ ATHLETE_TITLES = [
 # Each entry: (raw_min, raw_max) → linearly mapped to 0..1000 points
 SCORE_MAP = {
     "high_knees":      (0, 30),       # reps
-    "vertical_jump":   (0.0, 0.4),    # jump_ratio (rise / leg_length)
-    "reaction_wall":   (0, 20),       # hits
-    "punch_power":     (0.0, 0.9),    # |vx|/arm_len per frame (FPS-dep) — tune
+    "vertical_jump":   (0.0, 0.8),    # jump_ratio (rise / leg_length)
+    "reaction_wall":   (0, 30),       # hits
+    "punch_power":     (0.0, 1.2),    # |vx|/arm_len per frame (FPS-dep) — tune
     "javelin":         (0.0, 1.0),    # normalised burst — tune
 }
