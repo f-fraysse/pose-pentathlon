@@ -21,7 +21,7 @@ class HighKneesActivity:
     name = "High Knees"
     instruction_text = "Run on the spot. Lift those knees up!"
     instruction_image = None
-    duration_s = 12.0
+    duration_s = 10.0
 
     # Hip / knee / ankle on both sides
     HL_JOINTS = {11, 12, 13, 14, 15, 16}
@@ -105,7 +105,7 @@ class VerticalJumpActivity:
     name = "Vertical Jump"
     instruction_text = "Crouch and jump as high as you can. Best try counts!"
     instruction_image = None
-    duration_s = 15.0
+    duration_s = 10.0
 
     # Hips + ankles + leg chains: measurement points and the legs that drive the jump
     HL_JOINTS = {11, 12, 15, 16}
@@ -201,7 +201,7 @@ class ReactionWallActivity:
     name = "Reaction Wall"
     instruction_text = "Touch the targets as fast as you can!"
     instruction_image = None
-    duration_s = 15.0
+    duration_s = 10.0
 
     # Shoulders, elbows, wrists
     HL_JOINTS = {5, 6, 7, 8, 9, 10}

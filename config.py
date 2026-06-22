@@ -100,11 +100,11 @@ CIRCUIT_ACTIVITIES = [
 
 # Athlete titles by total points
 ATHLETE_TITLES = [
-    (1500, "Rookie"),
-    (2500, "Athlete"),
-    (3500, "Competitor"),
-    (4500, "Elite"),
-    (10_000, "Champion"),
+    (1500, "Mid"),
+    (2500, "Decent"),
+    (3500, "Solid"),
+    (4500, "Cracked"),
+    (10_000, "GOATed"),
 ]
 
 # Per-activity scoring endpoints — tune by feel during M4+
@@ -112,7 +112,7 @@ ATHLETE_TITLES = [
 SCORE_MAP = {
     "high_knees":      (0, 30),       # reps
     "vertical_jump":   (0.0, 0.8),    # jump_ratio (rise / leg_length)
-    "reaction_wall":   (0, 30),       # hits
-    "punch_power":     (0.0, 1.2),    # |vx|/arm_len per frame (FPS-dep) — tune
+    "reaction_wall":   (0, 20),       # hits
+    "punch_power":     (0.0, 0.9),    # |vx|/arm_len per frame (FPS-dep) — tune
     "javelin":         (0.0, 1.0),    # normalised burst — tune
 }
